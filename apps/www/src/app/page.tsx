@@ -2,7 +2,7 @@ import { db } from "@gnd/db";
 import Image from "next/image";
 
 export default async function Home() {
-  const x = await db.users.count({
+  const x = await db.dealerAuth.count({
     where: {
       deletedAt: null,
     },
