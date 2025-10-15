@@ -1,5 +1,5 @@
-import { prisma, Prisma } from "@next16/db";
-// import { camel } from "@next16/utils";
+import { prisma, Prisma } from "@gnd/db";
+// import { camel } from "@gndils";
 
 import { env } from "process";
 import { compare, hash } from "bcrypt-ts";
@@ -7,8 +7,8 @@ import { compare, hash } from "bcrypt-ts";
 // import { formatDateRange } from "little-date";
 
 import { formatISO, differenceInMinutes } from "date-fns";
-import { camel } from "@next16/utils/format";
-import { generateRandomString } from "@next16/utils";
+import { camel } from "@gndils/format";
+import { generateRandomString } from "@gndils";
 export const PERMISSION_NAMES_PASCAL = [
   // "Project",
 ] as const;
