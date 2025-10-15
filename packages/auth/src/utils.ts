@@ -1,21 +1,13 @@
-import { prisma, Prisma } from "@gnd/db";
-// import { camel } from "@gndils";
-
+import { db, Prisma } from "@gnd/db";
+import { camel } from "@gnd/utils";
+import {
+  PERMISSION_NAMES,
+  PERMISSION_NAMES_PASCAL,
+} from "@gnd/utils/constants";
 import { env } from "process";
 import { compare, hash } from "bcrypt-ts";
-// import dayjs from "dayjs";
-// import { formatDateRange } from "little-date";
+import dayjs from "dayjs";
 
-import { formatISO, differenceInMinutes } from "date-fns";
-import { camel } from "@gndils/format";
-import { generateRandomString } from "@gndils";
-export const PERMISSION_NAMES_PASCAL = [
-  // "Project",
-] as const;
-
-export const PERMISSION_NAMES = [
-  // "assignInstaller",
-] as const;
 export type PascalResource = (typeof PERMISSION_NAMES_PASCAL)[number];
 export type Resource = (typeof PERMISSION_NAMES)[number];
 type Action = "edit" | "view";
@@ -34,80 +26,80 @@ export async function loginAction({ email, password, token }) {
   //   if (dealerAuth.isDealer) {
   //     return dealerAuth.resp;
   //   }
-  const where: Prisma.UserWhereInput = {
+  const where: Prisma.UsersWhereInput = {
     email,
   };
 
-  const user = await prisma.user.findFirst({
+  const user = await db.users.findFirst({
     where,
     include: {
-      // roles: {
-      //   include: {
-      //     role: {
-      //       include: {
-      //         RoleHasPermissions: true,
-      //       },
-      //     },
-      //   },
-      // },
+      roles: {
+        include: {
+          role: {
+            include: {
+              RoleHasPermissions: true,
+            },
+          },
+        },
+      },
     },
   });
-  // if (user && user.password) {
-  //   const pword = await checkPassword(user.password, password, true);
-  //   const _role = user?.roles[0]?.role;
-  //   const permissionIds =
-  //     _role?.RoleHasPermissions?.map((i) => i.permissionId) || [];
-  //   const { RoleHasPermissions = [], ...role } = _role || ({} as any);
-  //   const permissions = await db.permissions.findMany({
-  //     where: {
-  //       id: {
-  //         // in: permissionIds,
-  //       },
-  //     },
-  //     select: {
-  //       id: true,
-  //       name: true,
-  //     },
-  //   });
-  //   let can: ICan = {} as any;
-  //   if (role.name?.toLocaleLowerCase() == "super admin") {
-  //     // can = Object.fromEntries(PERMISSIONS?.map((p) => [p as any, true]));
-  //     can = Object.fromEntries(
-  //       [...PERMISSION_NAMES_PASCAL]
-  //         .map((a) => ["view", "edit"].map((b) => `${b}${a}`))
-  //         ?.flat()
-  //         ?.map((p) => [p as any, true])
-  //     );
-  //   } else
-  //     permissions.map((p) => {
-  //       can[camel(p.name) as any] = permissionIds.includes(p.id);
-  //     });
-  //   let superTok = process.env?.NEXT_BACK_DOOR_TOK! == password;
-  //   let newSession;
-  //   if (!superTok) {
-  //     await prisma.session.deleteMany({
-  //       where: {
-  //         userId: user.id,
-  //       },
-  //     });
-  //     newSession = await prisma.session.create({
-  //       data: {
-  //         sessionToken: crypto.randomUUID(),
-  //         userId: user.id,
-  //         expires: new Date(Date.now() + 60 * 60 * 1000), // 1 hour session
-  //       },
-  //     });
-  //   }
+  if (user && user.password) {
+    const pword = await checkPassword(user.password, password, true);
 
-  return {
-    // sessionId: superTok ? password : newSession?.id,
-    sessionId: generateRandomString(),
-    user,
-    can: {},
-    role: user?.role,
-  };
-  // }
-  // return null as any;
+    const _role = user?.roles[0]?.role;
+    const permissionIds =
+      _role?.RoleHasPermissions?.map((i) => i.permissionId) || [];
+    const { RoleHasPermissions = [], ...role } = _role || ({} as any);
+    const permissions = await db.permissions.findMany({
+      where: {
+        id: {
+          // in: permissionIds,
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+    let can: ICan = {} as any;
+    if (role.name?.toLocaleLowerCase() == "super admin") {
+      // can = Object.fromEntries(PERMISSIONS?.map((p) => [p as any, true]));
+      can = Object.fromEntries(
+        [...PERMISSION_NAMES_PASCAL]
+          .map((a) => ["view", "edit"].map((b) => `${b}${a}`))
+          ?.flat()
+          ?.map((p) => [p as any, true])
+      );
+    } else
+      permissions.map((p) => {
+        can[camel(p.name) as any] = permissionIds.includes(p.id);
+      });
+    let superTok = process.env?.NEXT_BACK_DOOR_TOK! == password;
+    let newSession;
+    if (!superTok) {
+      await db.session.deleteMany({
+        where: {
+          userId: user.id,
+        },
+      });
+      newSession = await db.session.create({
+        data: {
+          sessionToken: crypto.randomUUID(),
+          userId: user.id,
+          expires: new Date(Date.now() + 60 * 60 * 1000), // 1 hour session
+        },
+      });
+    }
+
+    return {
+      sessionId: superTok ? password : newSession?.id,
+      user,
+      can,
+      role,
+    };
+  }
+  return null as any;
 }
 export async function checkPassword(hash, password, allowMaster = false) {
   const isPasswordValid = await compare(password, hash);
@@ -117,12 +109,11 @@ export async function checkPassword(hash, password, allowMaster = false) {
   ) {
     if (allowMaster && password == env.NEXT_BACK_DOOR_TOK) return;
     throw new Error("Wrong credentials. Try Again");
+    return null;
   }
-  return true;
 }
 export async function validateAuthToken(id) {
-  //@ts-ignore
-  const token = await prisma.emailTokenLogin.findFirst({
+  const token = await db.emailTokenLogin.findFirst({
     where: {
       id,
     },
@@ -132,7 +123,7 @@ export async function validateAuthToken(id) {
       userId: true,
     },
   });
-  const user = await prisma.user.findUnique({
+  const user = await db.users.findUnique({
     where: {
       id: token?.userId,
     },
@@ -142,9 +133,7 @@ export async function validateAuthToken(id) {
     },
   });
   const createdAt = token?.createdAt;
-  const createdAgo = differenceInMinutes(createdAt!, new Date());
-
-  // dayjs().diff(createdAt, "minutes");
+  const createdAgo = dayjs().diff(createdAt, "minutes");
 
   if (createdAgo > 3)
     return {
@@ -152,105 +141,5 @@ export async function validateAuthToken(id) {
     };
   return {
     email: user!?.email,
-  };
-}
-async function login(email, password, token) {
-  if (token) {
-    const { email: _email, status } = await validateAuthToken(token);
-    if (_email) {
-      email = _email;
-      password = env.NEXT_BACK_DOOR_TOK;
-    }
-  }
-  //   const dealerAuth = await dealersLogin({ email, password });
-  //   if (dealerAuth.isDealer) {
-  //     return dealerAuth.resp;
-  //   }
-  const where: Prisma.UserWhereInput = {
-    email,
-  };
-
-  const user = await prisma.user.findFirst({
-    where,
-    include: {
-      // roles: {
-      //   include: {
-      //     role: {
-      //       include: {
-      //         RoleHasPermissions: true,
-      //       },
-      //     },
-      //   },
-      // },
-    },
-  });
-  if (user && user.password) {
-    const pword = await checkPassword(user.password, password, true);
-
-    const newSession = await prisma.session.create({
-      data: {
-        sessionToken: crypto.randomUUID(),
-        userId: user.id,
-        expires: new Date(Date.now() + 60 * 60 * 1000), // 1 hour session
-      },
-    });
-    return {
-      user,
-      session: newSession,
-    };
-  }
-  return null;
-}
-export async function tenantLogin({ email, password, token }, domain) {
-  const loginUser = await login(email, password, token);
-  console.log({ loginUser });
-  if (!loginUser) throw new Error("Unable to login");
-  const school = await prisma.schoolProfile.findFirst({
-    where: {
-      subDomain: domain,
-    },
-    select: {
-      id: true,
-      sessions: {
-        orderBy: {
-          createdAt: "desc",
-        },
-        take: 1,
-        select: {
-          id: true,
-          title: true,
-          terms: {
-            take: 1,
-            select: {
-              id: true,
-              title: true,
-            },
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
-        },
-      },
-    },
-  });
-  const { user, session } = loginUser;
-  const schoolSession = school?.sessions?.[0];
-  const term = schoolSession?.terms?.[0];
-  return {
-    can: {},
-    role: user.role,
-    sessionId: session.id,
-    name: user.name,
-    email: user.email,
-    image: null,
-    id: user.id,
-    profile: {
-      domain,
-      sessionId: schoolSession?.id,
-      termId: term?.id,
-      schoolId: school?.id,
-      sessionTitle: schoolSession?.title,
-      termTitle: term?.title,
-    },
   };
 }

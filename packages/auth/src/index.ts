@@ -2,8 +2,97 @@ import type { BetterAuthOptions } from "better-auth";
 // import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { prisma } from "@gnd/db";
-import { nextCookies } from "better-auth/next-js";
+import { db, PrismaClient, Roles, Users } from "@gnd/db";
+import { DefaultSession, NextAuthOptions } from "next-auth";
+import { loginAction, type ICan } from "./utils";
+import CredentialsProvider from "next-auth/providers/credentials";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
+
+declare module "next-auth" {
+  interface User {
+    user: Users;
+    can: ICan;
+    role: Roles;
+    sessionId?: string;
+  }
+  interface Session extends DefaultSession {
+    // user: {
+    user: Users;
+    can: ICan;
+    role: Roles;
+  }
+}
+declare module "next-auth/jwt" {
+  /** Returned by the `jwt` callback and `getToken`, when using JWT sessions */
+  interface JWT {
+    user: Users;
+    can: ICan;
+    role: Roles;
+  }
+}
+
+export const nextAuthOptions = ({ secret }) =>
+  ({
+    session: {
+      strategy: "jwt",
+      // strategy: "database",
+    },
+
+    pages: {
+      signIn: "/login",
+      error: "/login?error=login+failed",
+    },
+    jwt: {
+      secret: "super-secret",
+      maxAge: 15 * 24 * 30 * 60,
+    },
+    adapter: PrismaAdapter(new PrismaClient()),
+    // secret: process.env.SECRET,
+    secret,
+    callbacks: {
+      jwt: async ({ token, user: cred }) => {
+        if (cred) {
+          const { role, can, user, sessionId } = cred;
+          token.user = user;
+          token.can = can;
+          token.role = role;
+          token.sessionId = sessionId;
+        }
+        if (!token.sessionId) return null;
+        return token;
+      },
+      session({ session, user, token }) {
+        if (session.user) {
+          session.user = token.user;
+          session.role = token.role;
+          session.can = token.can;
+        }
+        return session;
+      },
+    },
+    providers: [
+      CredentialsProvider({
+        name: "Sign in",
+        credentials: {
+          token: {},
+          type: {},
+          email: {
+            label: "Email",
+            type: "email",
+            placeholder: "example@example.com",
+          },
+          password: { label: "Password", type: "password" },
+        },
+        async authorize(credentials: any) {
+          if (!credentials) {
+            return null;
+          }
+          const login = await loginAction(credentials);
+          return login;
+        },
+      }),
+    ],
+  }) satisfies NextAuthOptions;
 
 export function initAuth(options: {
   baseUrl: string;
@@ -13,36 +102,18 @@ export function initAuth(options: {
   //   discordClientSecret: string;
 }) {
   const config = {
-    database: prismaAdapter(prisma, {
-      provider: "postgresql",
+    database: prismaAdapter(db, {
+      provider: "mysql",
     }),
     baseURL: options.baseUrl,
-    // secret: options.secret!,
-    secret: process.env.BETTER_AUTH_SECRET,
-    account: {
-      fields: {
-        // providerId
-        // accountId: ""
-      },
-    },
+    secret: options.secret,
     user: {
       //   fields: {},
-      // fields: {
-      //   email: true,
-      //   createdAt: true,
-      //   name: true,
-      //   updatedAt: true,
-      // },
       additionalFields: {
-        role: {
-          defaultValue: "Admin",
-          required: false,
+        type: {
           type: "string",
+          required: true,
         },
-        // type: {
-        //   type: "string",
-        //   required: true,
-        // },
       },
     },
     advanced: {
@@ -50,25 +121,10 @@ export function initAuth(options: {
     },
     emailAndPassword: {
       enabled: true,
-      password: {
-        // async hash(password) {
-        //   return await hash(password, 10);
-        // },
-        // async verify(data) {
-        //   console.log({ data });
-        //   return true;
-        // },
-        // async verify(data) {
-        //   return true;
-        // },
-      },
-      async sendResetPassword(data, request) {
-        console.log("RESETTING>>>");
-        console.log(data);
-      },
+      //   sendResetPassword(data, request) {
+      //   },
     },
     plugins: [
-      nextCookies(),
       //   username({}),
       //   oAuthProxy({
       //     /**
@@ -88,13 +144,12 @@ export function initAuth(options: {
       // google: {}
     },
     hooks: {},
-    trustedOrigins: [
-      "expo://",
-      "*.localhost:2200", // Trust all subdomains of example.com (any protocol)
-      "https://01f5e232bbc3.ngrok-free.app", // Trust all subdomains of example.com (any protocol)
-      //   "https://*.example.com", // Trust only HTTPS subdomains of example.com
-      //   "http://*.dev.example.com", // Trust all HTTP subdomains of dev.example.com
-    ],
+    // trustedOrigins: [
+    //   "expo://",
+    //   "*.example.com", // Trust all subdomains of example.com (any protocol)
+    //   "https://*.example.com", // Trust only HTTPS subdomains of example.com
+    //   "http://*.dev.example.com", // Trust all HTTP subdomains of dev.example.com
+    // ],
   } satisfies BetterAuthOptions;
 
   return betterAuth(config);
